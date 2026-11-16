@@ -29,6 +29,17 @@ pub trait UpdateSource: Send + Sync {
     fn get_release_feed(&self, channel: &str, app: &bundle::Manifest, staged_user_id: &str) -> Result<VelopackAssetFeed, Error>;
     /// Download the specified VelopackAsset to the provided local file path.
     fn download_release_entry(&self, asset: &VelopackAsset, local_file: &Path, progress_sender: Option<Sender<i16>>) -> Result<(), Error>;
+    /// OpenNCALayer patch: checks a full package that was not just downloaded from this source
+    /// (one already in the packages directory, or one rebuilt from deltas) before it is used.
+    /// The default is `verify_checksum`, the size and checksum check of downloaded packages.
+    fn verify_full_package(
+        &self,
+        local_file: &Path,
+        asset: &VelopackAsset,
+        verify_checksum: &dyn Fn(&Path, &VelopackAsset) -> Result<(), Error>,
+    ) -> Result<(), Error> {
+        verify_checksum(local_file, asset)
+    }
 }
 
 /// A source that does not provide any update capability.
