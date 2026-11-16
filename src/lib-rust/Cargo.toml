@@ -1,7 +1,8 @@
 [package]
 name = "velopack"
 readme = "README.md"
-version.workspace = true
+# The version this commit was published with; the repository itself builds as 0.0.0-local.
+version = "1.3.39-g8d2844f"
 description.workspace = true
 authors.workspace = true
 homepage.workspace = true
