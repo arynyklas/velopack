@@ -422,9 +422,20 @@ impl UpdateManager {
         let final_target_file = local_package_path(packages_dir, &update.TargetFullRelease);
         let partial_file = final_target_file.with_extension("partial");
 
+        // OpenNCALayer patch: a package already on disk is used only if it passes the source's
+        // check; one that does not is deleted and downloaded again.
         if final_target_file.exists() {
-            info!("Package already exists on disk, skipping download: '{:?}'", final_target_file);
-            return Ok(());
+            let verify_checksum = |file: &Path, asset: &VelopackAsset| self.verify_package_checksum(file, asset);
+            match self.inner.source.verify_full_package(&final_target_file, &update.TargetFullRelease, &verify_checksum) {
+                Ok(()) => {
+                    info!("Package already exists on disk, skipping download: '{:?}'", final_target_file);
+                    return Ok(());
+                }
+                Err(e) => {
+                    warn!("Package on disk does not match the update, downloading it again: '{:?}': {}", final_target_file, e);
+                    fs::remove_file(&final_target_file)?;
+                }
+            }
         }
 
         let old_nupkg_pattern = format!("{}/*.nupkg", packages_dir.to_string_lossy());
@@ -450,7 +461,15 @@ impl UpdateManager {
 
         if update.BaseRelease.is_some() && !update.DeltasToTarget.is_empty() {
             info!("Beginning delta update process.");
-            if self.download_and_apply_delta_updates(update, &partial_file, progress.clone()).is_err() {
+            // OpenNCALayer patch: the package rebuilt from the deltas must pass the source's check
+            // before it is renamed into place and Update.exe is taken from it; otherwise the full
+            // package is downloaded, as when a delta fails.
+            let verify_checksum = |file: &Path, asset: &VelopackAsset| self.verify_package_checksum(file, asset);
+            let rebuilt = self.download_and_apply_delta_updates(update, &partial_file, progress.clone()).and_then(|()| {
+                self.inner.source.verify_full_package(&partial_file, &update.TargetFullRelease, &verify_checksum)
+            });
+            if let Err(e) = rebuilt {
+                warn!("Delta update failed: {}", e);
                 info!("Falling back to full update...");
                 self.inner
                     .source
